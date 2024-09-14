@@ -12,7 +12,5 @@ export class AppController {
   @Get()
   @Render('home')
   handleHomePage() {
-    const port = this.configService.get<string>('PORT')
-    console.log('>>> check PORT: ', port);
   }
 }

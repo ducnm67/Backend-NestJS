@@ -1,14 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { User } from './schemas/user.schema';
-import { Model, Types } from 'mongoose';
+import { User, UserDocument } from './schemas/user.schema';
+import { Types } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
 import { compareSync, genSaltSync, hashSync } from 'bcryptjs';
+import { SoftDeleteModel } from 'soft-delete-plugin-mongoose';
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel(User.name) private userModel: Model<User>) { }
+  constructor(@InjectModel(User.name) private userModel: SoftDeleteModel<UserDocument>) { }
 
   getHashPassword = (password: string) => {
     const salt = genSaltSync(10);
@@ -54,7 +55,7 @@ export class UsersService {
   }
 
   async update(updateUserDto: UpdateUserDto) {
-    let user = await this.userModel.findByIdAndUpdate(
+    let user = await this.userModel.updateOne(
       { _id: updateUserDto._id },
       { ...updateUserDto }
     )
@@ -66,8 +67,8 @@ export class UsersService {
       throw new Error('>>> Invalid ID');
     }
 
-    const user = await this.userModel.deleteOne({ _id: id }).exec();
-    if (user.deletedCount === 0) {
+    const user = await this.userModel.softDelete({ _id: id });
+    if (user.deleted === 0) {
       throw new Error('>>> User not found');
     }
     return user;

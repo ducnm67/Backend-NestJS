@@ -14,11 +14,11 @@ export class CompaniesController {
     return this.companiesService.create(createCompanyDto, user);
   }
 
-  @Get()
   @ResponseMessage("Fetch list company with paginate")
+  @Get()
   findAll(
-    @Query("page") currentPage: string,
-    @Query("limit") limit: string,
+    @Query("current") currentPage: string,
+    @Query("pageSize") limit: string,
     @Query() qs: string,
   ) {
     return this.companiesService.findAll(+currentPage, +limit, qs);

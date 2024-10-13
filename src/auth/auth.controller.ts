@@ -5,13 +5,13 @@ import { LocalAuthGuard } from './local-auth.guard';
 import { RegisterUserDto } from 'src/users/dto/create-user.dto';
 import { Request, Response } from 'express';
 import { IUser } from 'src/users/user.interface';
-
-
+import { RolesService } from 'src/roles/roles.service';
 
 @Controller("auth")
 export class AuthController {
     constructor(
-        private authService: AuthService
+        private authService: AuthService,
+        private roleService: RolesService,
     ) { }
 
     @Public()
@@ -26,12 +26,14 @@ export class AuthController {
     @ResponseMessage("Register a new user")
     @Post('register')
     create(@Body() registerUserDto: RegisterUserDto) {
-        return this.authService.create(registerUserDto);
+        return this.authService.register(registerUserDto);
     }
 
     @ResponseMessage("Get user information")
     @Get('account')
     handleGetAccount(@User() user: IUser) {
+        const accountPermissions = this.roleService.findOne(user.role._id) as any
+        user.permissions = accountPermissions.permissions
         return { user }
     }
 
@@ -45,7 +47,7 @@ export class AuthController {
 
     @ResponseMessage("Logout User")
     @Post('logout')
-    handleLogout(@User() user: IUser, @Res({ passthrough: true }) response: Response) {
-        return this.authService.logout(user, response);
+    handleLogout(@Res({ passthrough: true }) response: Response, @User() user: IUser) {
+        return this.authService.logout(response, user);
     }
 }

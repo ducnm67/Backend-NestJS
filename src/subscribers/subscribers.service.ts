@@ -10,27 +10,33 @@ import aqp from 'api-query-params';
 
 @Injectable()
 export class SubscribersService {
-
-  constructor(@InjectModel(Subscriber.name) private subscriberModel: SoftDeleteModel<SubscriberDocument>) { }
+  constructor(
+    @InjectModel(Subscriber.name)
+    private subscriberModel: SoftDeleteModel<SubscriberDocument>,
+  ) {}
 
   async create(subs: CreateSubscriberDto, user: IUser) {
-    const isExist = await this.subscriberModel.findOne({ email: subs.email })
+    const isExist = await this.subscriberModel
+      .findOne({ email: subs.email })
+      .lean();
     if (isExist) {
-      throw new BadRequestException(`Email ${subs.email} đã tồn tại trên hệ thống!}`)
+      throw new BadRequestException(
+        `Email ${subs.email} đã tồn tại trên hệ thống!`,
+      );
     }
-    let newSubs = await this.subscriberModel.create(
-      {
-        ...subs,
-        createdBy: {
-          _id: user._id,
-          email: user.email
-        }
-      }
-    );
+
+    const newSubs = await this.subscriberModel.create({
+      ...subs,
+      createdBy: {
+        _id: user._id,
+        email: user.email,
+      },
+    });
+
     return {
       _id: newSubs?._id,
-      createdAt: newSubs?.createdAt
-    }
+      createdAt: newSubs?.createdAt,
+    };
   }
 
   async findAll(currentPage: number, limit: number, qs: string) {
@@ -38,62 +44,94 @@ export class SubscribersService {
     delete filter.current;
     delete filter.pageSize;
 
-    let offset = (+currentPage - 1) * (+limit);
-    let defaultLimit = +limit ? +limit : 10;
+    const offset = (+currentPage - 1) * +limit;
+    const defaultLimit = +limit || 10;
 
-    const totalItems = (await this.subscriberModel.find(filter)).length;
+    // Tính tổng số bản ghi bằng countDocuments() thay vì find().length
+    const totalItems = await this.subscriberModel.countDocuments(filter);
     const totalPages = Math.ceil(totalItems / defaultLimit);
 
-
-    const result = await this.subscriberModel.find(filter)
+    const result = await this.subscriberModel
+      .find(filter)
       .skip(offset)
       .limit(defaultLimit)
       .sort(sort as any)
       .populate(population)
+      .lean() // Dùng lean() để giảm tải bộ nhớ
       .exec();
 
     return {
       meta: {
-        current: currentPage, //trang hiện tại
-        pageSize: limit, //số lượng bản ghi đã lấy
-        pages: totalPages,  //tổng số trang với điều kiện query
-        total: totalItems // tổng số phần tử (số bản ghi)
+        current: currentPage,
+        pageSize: limit,
+        pages: totalPages,
+        total: totalItems,
       },
-      result //kết quả query
-    }
+      result,
+    };
   }
 
   async findOne(id: string) {
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('Not found role');
+      throw new BadRequestException('Không tìm thấy người đăng ký');
     }
-    return this.subscriberModel.findById(id);
+
+    const subscriber = await this.subscriberModel.findById(id).lean();
+    if (!subscriber) {
+      throw new BadRequestException('Không tìm thấy người đăng ký');
+    }
+
+    return subscriber;
   }
 
   async update(subs: UpdateSubscriberDto, user: IUser) {
-    return await this.subscriberModel.updateOne(
+    const updatedSubscriber = await this.subscriberModel.updateOne(
       { email: user.email },
       {
         ...subs,
-        updatedBy: { _id: user._id, email: user.email }
+        updatedBy: { _id: user._id, email: user.email },
       },
-      { upsert: true }
-    )
+      { upsert: true },
+    );
+
+    if (updatedSubscriber.modifiedCount === 0) {
+      throw new BadRequestException('Không có thay đổi nào được thực hiện');
+    }
+
+    return { message: 'Cập nhật người đăng ký thành công' };
   }
 
   async remove(id: string, user: IUser) {
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('Not found subscriber');
+      throw new BadRequestException('Không tìm thấy người đăng ký');
     }
+
+    const foundSubscriber = await this.subscriberModel.findById(id).lean();
+    if (!foundSubscriber) {
+      throw new BadRequestException('Không tìm thấy người đăng ký');
+    }
+
     await this.subscriberModel.updateOne(
       { _id: id },
-      {
-        deletedBy: { _id: user._id, email: user.email }
-      })
-    return await this.subscriberModel.softDelete({ _id: id })
+      { deletedBy: { _id: user._id, email: user.email } },
+    );
+
+    const result = await this.subscriberModel.softDelete({ _id: id });
+
+    if (!result) {
+      throw new BadRequestException('Không thể xóa người đăng ký');
+    }
+
+    return { message: 'Người đăng ký đã bị xóa thành công' };
   }
 
   async getSkills(user: IUser) {
-    return await this.subscriberModel.findOne({ email: user.email }, { skills: 1 })
+    const subscriber = await this.subscriberModel
+      .findOne({ email: user.email }, { skills: 1 })
+      .lean();
+    if (!subscriber) {
+      throw new BadRequestException('Không tìm thấy người đăng ký');
+    }
+    return subscriber.skills;
   }
 }

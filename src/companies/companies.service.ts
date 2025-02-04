@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { InjectModel } from '@nestjs/mongoose';
@@ -10,15 +14,15 @@ import { Types } from 'mongoose';
 
 @Injectable()
 export class CompaniesService {
-  constructor(@InjectModel(Company.name) private companyModel: SoftDeleteModel<CompanyDocument>) { }
+  constructor(
+    @InjectModel(Company.name)
+    private readonly companyModel: SoftDeleteModel<CompanyDocument>,
+  ) {}
 
-  async create(createCompanyDto: CreateCompanyDto, user: IUser) {
-    return await this.companyModel.create({
-      ...createCompanyDto,
-      createdBy: {
-        _id: user._id,
-        email: user.email
-      }
+  async create(dto: CreateCompanyDto, user: IUser) {
+    return this.companyModel.create({
+      ...dto,
+      createdBy: { _id: user._id, email: user.email },
     });
   }
 
@@ -27,68 +31,71 @@ export class CompaniesService {
     delete filter.current;
     delete filter.pageSize;
 
-    let offset = (+currentPage - 1) * (+limit);
-    let defaultLimit = +limit ? +limit : 10;
+    const page = Math.max(currentPage || 1, 1);
+    const pageSize = limit || 10;
+    const offset = (page - 1) * pageSize;
 
-    const totalItems = (await this.companyModel.find(filter)).length;
-    const totalPages = Math.ceil(totalItems / defaultLimit);
+    const totalItems = await this.companyModel.countDocuments(filter);
+    const totalPages = Math.ceil(totalItems / pageSize);
 
-
-    const result = await this.companyModel.find(filter)
+    const result = await this.companyModel
+      .find(filter)
       .skip(offset)
-      .limit(defaultLimit)
+      .limit(pageSize)
       .sort(sort as any)
       .populate(population)
       .exec();
 
     return {
       meta: {
-        current: currentPage, //trang hiện tại
-        pageSize: limit, //số lượng bản ghi đã lấy
-        pages: totalPages,  //tổng số trang với điều kiện query
-        total: totalItems // tổng số phần tử (số bản ghi)
+        current: page,
+        pageSize,
+        pages: totalPages,
+        total: totalItems,
       },
-      result //kết quả query
-    }
+      result,
+    };
   }
 
   async findOne(id: string) {
     if (!Types.ObjectId.isValid(id)) {
-      throw new Error('>>> Invalid ID');
+      throw new BadRequestException('Invalid company ID');
     }
 
-    const company = await this.companyModel.findById(id)
-
+    const company = await this.companyModel.findById(id);
     if (!company) {
-      throw new Error('>>> User not found');
+      throw new NotFoundException('Company not found');
     }
 
     return company;
   }
 
-  async update(id: string, updateCompanyDto: UpdateCompanyDto, user: IUser) {
-    return await this.companyModel.updateOne(
+  async update(id: string, dto: UpdateCompanyDto, user: IUser) {
+    const result = await this.companyModel.updateOne(
       { _id: id },
       {
-        ...updateCompanyDto,
-        updatedBy: {
-          _id: user._id,
-          email: user.email
-        }
-      }
+        ...dto,
+        updatedBy: { _id: user._id, email: user.email },
+      },
     );
+
+    if (result.matchedCount === 0) {
+      throw new NotFoundException('Company not found or already deleted');
+    }
+
+    return result;
   }
 
   async remove(id: string, user: IUser) {
-    await this.companyModel.updateOne(
+    const result = await this.companyModel.updateOne(
       { _id: id },
-      {
-        deletedBy: {
-          _id: user._id,
-          email: user.email
-        }
-      }
-    )
-    return await this.companyModel.softDelete({ _id: id });;
+      { deletedBy: { _id: user._id, email: user.email } },
+    );
+
+    if (result.matchedCount === 0) {
+      throw new NotFoundException('Company not found or already deleted');
+    }
+
+    return this.companyModel.softDelete({ _id: id });
   }
 }

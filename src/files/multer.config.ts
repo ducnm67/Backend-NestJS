@@ -1,59 +1,53 @@
-import { Injectable } from "@nestjs/common";
-import { MulterModuleOptions, MulterOptionsFactory } from "@nestjs/platform-express";
-import fs from "fs";
-import { diskStorage } from "multer";
-import path, { join } from "path";
+import { Injectable } from '@nestjs/common';
+import {
+  MulterModuleOptions,
+  MulterOptionsFactory,
+} from '@nestjs/platform-express';
+import { promises as fs } from 'fs';
+import { diskStorage } from 'multer';
+import path from 'path';
 
 @Injectable()
 export class MulterConfigService implements MulterOptionsFactory {
+  private getRootPath(): string {
+    return process.cwd();
+  }
 
-    getRootPath = () => {
-        return process.cwd();
+  private async ensureExists(targetDirectory: string): Promise<void> {
+    try {
+      await fs.mkdir(targetDirectory, { recursive: true });
+    } catch (error) {
+      console.error(
+        `Error creating directory ${targetDirectory}:`,
+        error.message,
+      );
+    }
+  }
+
+  createMulterOptions(): MulterModuleOptions {
+    return {
+      storage: diskStorage({
+        destination: async (req, file, cb) => {
+          const folder = (req?.headers?.folder_type as string) || 'default';
+          const safeFolder = folder.replace(/[^a-zA-Z0-9-_]/g, ''); // Loại bỏ ký tự đặc biệt
+          const uploadPath = path.resolve(
+            this.getRootPath(),
+            'public/images',
+            safeFolder,
+          );
+
+          await this.ensureExists(uploadPath);
+          cb(null, uploadPath);
+        },
+        filename: (req, file, cb) => {
+          const extName = path.extname(file.originalname);
+          const baseName = path
+            .basename(file.originalname, extName)
+            .replace(/[^a-zA-Z0-9-_]/g, ''); // Xử lý tên file an toàn
+          const finalName = `${baseName}-${Date.now()}${extName}`;
+          cb(null, finalName);
+        },
+      }),
     };
-
-    ensureExists(targetDirectory: string) {
-        fs.mkdir(targetDirectory, { recursive: true }, (error) => {
-            if (!error) {
-                console.log('Directory successfully created, or it already exists.');
-                return;
-            }
-            switch (error.code) {
-                case 'EEXIST':
-                    // Error:
-                    // Requested location already exists, but it's not a directory.
-                    break;
-                case 'ENOTDIR':
-                    // Error:
-                    // The parent hierarchy contains a file with the same name as the dir
-                    // you're trying to create.
-                    break;
-                default:
-                    // Some other error like permission denied.
-                    console.error(error);
-                    break;
-            }
-        });
-    }
-
-    createMulterOptions(): MulterModuleOptions {
-        return {
-            storage: diskStorage({
-                destination: (req, file, cb) => {
-                    const folder = req?.headers?.folder_type ?? "default";
-                    this.ensureExists(`public/images/${folder}`);
-                    cb(null, join(this.getRootPath(), `public/images/${folder}`))
-                },
-                filename: (req, file, cb) => {
-                    //get image extension
-                    let extName = path.extname(file.originalname);
-
-                    //get image's name (without extension)
-                    let baseName = path.basename(file.originalname, extName);
-
-                    let finalName = `${baseName}-${Date.now()}${extName}`
-                    cb(null, finalName)
-                }
-            })
-        };
-    }
+  }
 }

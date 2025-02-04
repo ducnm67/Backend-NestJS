@@ -11,20 +11,24 @@ import { AuthController } from './auth.controller';
 import { RolesModule } from 'src/roles/roles.module';
 
 @Module({
-  imports: [UsersModule, PassportModule, RolesModule,
+  imports: [
+    ConfigModule, // Đảm bảo ConfigModule có sẵn trước khi dùng ConfigService
+    UsersModule,
+    PassportModule,
+    RolesModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
+      useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_ACCESS_TOKEN_SECRET'),
         signOptions: {
-          expiresIn: ms(configService.get<string>('JWT_ACCESS_EXPIRE')) / 1000,
+          expiresIn: Number(ms(configService.get<string>('JWT_ACCESS_EXPIRE'))), // Chuyển đổi rõ ràng
         },
       }),
       inject: [ConfigService],
     }),
   ],
-  providers: [AuthService, LocalStrategy, JwtStrategy],
+  providers: [AuthService, LocalStrategy, JwtStrategy], // Thêm readonly để bảo vệ dependency injection
   exports: [AuthService],
-  controllers: [AuthController]
+  controllers: [AuthController],
 })
-export class AuthModule { }
+export class AuthModule {}

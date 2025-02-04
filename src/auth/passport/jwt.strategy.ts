@@ -7,28 +7,35 @@ import { RolesService } from 'src/roles/roles.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-    constructor(
-        private configService: ConfigService,
-        private roleService: RolesService,
-    ) {
-        super({
-            jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-            ignoreExpiration: false,
-            secretOrKey: configService.get<string>("JWT_ACCESS_TOKEN_SECRET"),
-        });
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly rolesService: RolesService,
+  ) {
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: configService.get<string>('JWT_ACCESS_TOKEN_SECRET'),
+    });
+  }
+
+  async validate(payload: IUser) {
+    const { _id, name, email, role } = payload;
+
+    if (!role || !role._id) {
+      return { _id, name, email, role: null, permissions: [] };
     }
 
-    async validate(payload: IUser) {
-        const { _id, name, email, role } = payload;
-        const userRole = role as unknown as { _id: string, name: string }
-        const temp = (await this.roleService.findOne(userRole._id)).toObject()
-        return {
-            _id,
-            name,
-            email,
-            role,
-            permissions: temp?.permissions ?? []
-        };
+    const roleData = await this.rolesService.findOne(role._id);
+    if (!roleData) {
+      return { _id, name, email, role: null, permissions: [] };
     }
 
+    return {
+      _id,
+      name,
+      email,
+      role,
+      permissions: roleData.permissions || [],
+    };
+  }
 }

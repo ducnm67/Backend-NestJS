@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 import { InjectModel } from '@nestjs/mongoose';
@@ -6,32 +6,43 @@ import { Permission, PermissionDocument } from './schemas/permission.schema';
 import { SoftDeleteModel } from 'soft-delete-plugin-mongoose';
 import { IUser } from 'src/users/user.interface';
 import aqp from 'api-query-params';
+import { Types } from 'mongoose';
 
 @Injectable()
 export class PermissionsService {
+  private readonly logger = new Logger(PermissionsService.name);
 
-  constructor(@InjectModel(Permission.name) private PermissionModel: SoftDeleteModel<PermissionDocument>) { }
+  constructor(
+    @InjectModel(Permission.name)
+    private permissionModel: SoftDeleteModel<PermissionDocument>,
+  ) {}
 
   async create(permission: CreatePermissionDto, user: IUser) {
-    const { apiPath, method } = permission
-    const permissionIsExisted = await this.PermissionModel.findOne({ apiPath, method })
+    const { apiPath, method } = permission;
+
+    const permissionIsExisted = await this.permissionModel.exists({
+      apiPath,
+      method,
+    });
 
     if (permissionIsExisted) {
-      throw new BadRequestException(`Permission với apiPath=${apiPath} , method=${method} đã tồn tại!`)
+      throw new BadRequestException(
+        `Permission với apiPath=${apiPath}, method=${method} đã tồn tại!`,
+      );
     }
 
-    const newPermission = await this.PermissionModel.create({
+    const newPermission = await this.permissionModel.create({
       ...permission,
       createdBy: {
         _id: user._id,
         email: user.email,
-      }
-    })
+      },
+    });
 
     return {
       _id: newPermission._id,
-      createdAt: newPermission.createdAt
-    }
+      createdAt: newPermission.createdAt,
+    };
   }
 
   async findAll(currentPage: number, limit: number, qs: string) {
@@ -39,37 +50,50 @@ export class PermissionsService {
     delete filter.current;
     delete filter.pageSize;
 
-    let offset = (+currentPage - 1) * (+limit);
-    let defaultLimit = +limit ? +limit : 10;
+    const offset = (+currentPage - 1) * +limit;
+    const defaultLimit = +limit || 10;
 
-    const totalItems = (await this.PermissionModel.find(filter)).length;
+    // Sử dụng countDocuments() để tăng hiệu suất
+    const totalItems = await this.permissionModel.countDocuments(filter);
     const totalPages = Math.ceil(totalItems / defaultLimit);
 
-
-    const result = await this.PermissionModel.find(filter)
+    const result = await this.permissionModel
+      .find(filter)
       .skip(offset)
       .limit(defaultLimit)
       .sort(sort as any)
       .populate(population)
+      .lean()
       .exec();
 
     return {
       meta: {
-        current: currentPage, //trang hiện tại
-        pageSize: limit, //số lượng bản ghi đã lấy
-        pages: totalPages,  //tổng số trang với điều kiện query
-        total: totalItems // tổng số phần tử (số bản ghi)
+        current: currentPage,
+        pageSize: limit,
+        pages: totalPages,
+        total: totalItems,
       },
-      result //kết quả query
-    }
+      result,
+    };
   }
 
   async findOne(id: string) {
-    return await this.PermissionModel.findOne({ _id: id });
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid ID format');
+    }
+    return await this.permissionModel.findById(id).lean();
   }
 
-  async update(id: string, updatePermissionDto: UpdatePermissionDto, user: IUser) {
-    return await this.PermissionModel.updateOne(
+  async update(
+    id: string,
+    updatePermissionDto: UpdatePermissionDto,
+    user: IUser,
+  ) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid ID format');
+    }
+
+    const updated = await this.permissionModel.updateOne(
       { _id: id },
       {
         ...updatePermissionDto,
@@ -77,18 +101,39 @@ export class PermissionsService {
           _id: user._id,
           email: user.email,
         },
-      })
+      },
+    );
+
+    if (updated.modifiedCount === 0) {
+      throw new BadRequestException(
+        'No permission found or no update performed',
+      );
+    }
+
+    return { message: 'Permission updated successfully' };
   }
 
   async remove(id: string, user: IUser) {
-    await this.PermissionModel.updateOne(
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid ID format');
+    }
+
+    await this.permissionModel.updateOne(
       { _id: id },
       {
         deletedBy: {
           _id: user._id,
-          email: user.email
-        }
-      })
-    return await this.PermissionModel.softDelete({ _id: id });
+          email: user.email,
+        },
+      },
+    );
+
+    const result = await this.permissionModel.softDelete({ _id: id });
+
+    if (!result) {
+      throw new BadRequestException('Failed to delete permission');
+    }
+
+    return { message: 'Permission deleted successfully' };
   }
 }

@@ -98,7 +98,7 @@ export class DatabasesService implements OnModuleInit {
           insertOne: {
             document: {
               name: "I'm Hỏi Dân IT",
-              email: 'hoidanit@gmail.com',
+              email: 'email@gmail.com',
               password: hashedPassword,
               age: 96,
               gender: 'MALE',
